@@ -1,0 +1,26 @@
+/* Custom quality button styles for video.js */
+.vjs-quality-button {
+    font-family: VideoJS;
+}
+
+.vjs-quality-button .vjs-icon-placeholder:before {
+    content: "\f110";
+    /* VideoJS HD icon */
+    font-size: 1.8em;
+    line-height: 1.67;
+}
+
+.vjs-quality-button:hover .vjs-icon-placeholder:before {
+    text-shadow: 0 0 1em rgba(255, 255, 255, 0.5);
+}
+
+.vjs-quality-button .vjs-control-text {
+    position: absolute;
+    clip: rect(1px 1px 1px 1px);
+    clip: rect(1px, 1px, 1px, 1px);
+    padding: 0;
+    border: 0;
+    height: 1px;
+    width: 1px;
+    overflow: hidden;
+}
