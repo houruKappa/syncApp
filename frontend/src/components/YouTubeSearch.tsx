@@ -12,10 +12,16 @@ import {
     InputAdornment,
     CircularProgress,
     Alert,
+    Tabs,
+    Tab,
+    Chip,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
+import LinkIcon from '@mui/icons-material/Link';
+import YouTubeIcon from '@mui/icons-material/YouTube';
 import axios from 'axios';
+import { parseVideoUrl, getPlatformName } from '../utils/videoUtils';
 
 interface YouTubeVideo {
     id: string;
@@ -31,11 +37,14 @@ interface YouTubeSearchProps {
 }
 
 const YouTubeSearch: React.FC<YouTubeSearchProps> = ({ onAddVideo }) => {
+    const [activeTab, setActiveTab] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
+    const [directUrl, setDirectUrl] = useState('');
     const [videos, setVideos] = useState<YouTubeVideo[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [apiKeyError, setApiKeyError] = useState(false);
+    const [urlError, setUrlError] = useState<string | null>(null);
 
     // YouTube API Key - получите на https://console.cloud.google.com/
     const YOUTUBE_API_KEY = process.env.REACT_APP_YOUTUBE_API_KEY || '';
@@ -141,29 +150,94 @@ const YouTubeSearch: React.FC<YouTubeSearchProps> = ({ onAddVideo }) => {
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
-            handleSearch();
+            if (activeTab === 0) {
+                handleSearch();
+            } else {
+                handleAddDirectUrl();
+            }
         }
+    };
+
+    const handleAddDirectUrl = () => {
+        if (!directUrl.trim()) {
+            setUrlError('Введите ссылку на видео');
+            return;
+        }
+
+        const videoInfo = parseVideoUrl(directUrl);
+        if (!videoInfo) {
+            setUrlError('Неподдерживаемая ссылка. Поддерживаются: YouTube, RuTube, Vimeo, прямые ссылки на .mp4/.webm');
+            return;
+        }
+
+        setUrlError(null);
+        // Extract title from URL or use platform name
+        const title = `${getPlatformName(videoInfo.platform)} видео`;
+        onAddVideo(videoInfo.url, title);
+        setDirectUrl('');
     };
 
     return (
         <Box>
-            <TextField
-                fullWidth
-                placeholder="Поиск видео на YouTube..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
-                InputProps={{
-                    endAdornment: (
-                        <InputAdornment position="end">
-                            <IconButton onClick={handleSearch} disabled={loading}>
-                                <SearchIcon />
-                            </IconButton>
-                        </InputAdornment>
-                    ),
-                }}
-                sx={{ mb: 2 }}
-            />
+            <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)} sx={{ mb: 2 }}>
+                <Tab icon={<YouTubeIcon />} label="Поиск YouTube" />
+                <Tab icon={<LinkIcon />} label="Добавить по ссылке" />
+            </Tabs>
+
+            {activeTab === 0 ? (
+                <TextField
+                    fullWidth
+                    placeholder="Поиск видео на YouTube..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    InputProps={{
+                        endAdornment: (
+                            <InputAdornment position="end">
+                                <IconButton onClick={handleSearch} disabled={loading}>
+                                    <SearchIcon />
+                                </IconButton>
+                            </InputAdornment>
+                        ),
+                    }}
+                    sx={{ mb: 2 }}
+                />
+            ) : (
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        fullWidth
+                        placeholder="Вставьте ссылку на видео (YouTube, RuTube, Vimeo или прямую ссылку .mp4/.webm)..."
+                        value={directUrl}
+                        onChange={(e) => {
+                            setDirectUrl(e.target.value);
+                            setUrlError(null);
+                        }}
+                        onKeyPress={handleKeyPress}
+                        error={!!urlError}
+                        helperText={urlError || 'Поддерживаются: YouTube, RuTube, Vimeo, прямые ссылки'}
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleAddDirectUrl}
+                                        startIcon={<AddIcon />}
+                                        disabled={!directUrl.trim()}
+                                    >
+                                        Добавить
+                                    </Button>
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                    <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        <Chip label="YouTube" size="small" icon={<YouTubeIcon />} />
+                        <Chip label="RuTube" size="small" color="primary" />
+                        <Chip label="Vimeo" size="small" color="secondary" />
+                        <Chip label=".mp4 / .webm" size="small" />
+                    </Box>
+                </Box>
+            )}
 
             {error && (
                 <Alert

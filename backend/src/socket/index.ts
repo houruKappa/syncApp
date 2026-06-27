@@ -749,6 +749,9 @@ export const initializeSocketHandlers = (io: Server): void => {
                     message: 'Комната расформирована модератором.'
                 });
 
+                // Broadcast to all clients that a room was deleted
+                io.emit('room-deleted', { roomId });
+
                 logger.info(`Room ${roomId} marked as deleted by moderator ${socket.userId}`);
             } catch (error) {
                 logger.error('Error deleting room:', error);
@@ -878,6 +881,16 @@ export const initializeSocketHandlers = (io: Server): void => {
                 logger.info(`User ${socket.userId} left voice chat in room ${roomId}`);
             } catch (error) {
                 logger.error('Error leaving voice chat:', error);
+            }
+        });
+
+        // Broadcast room creation to all connected clients
+        socket.on('room-created', () => {
+            try {
+                logger.info('Broadcasting room-created event');
+                socket.broadcast.emit('room-created');
+            } catch (error) {
+                logger.error('Error broadcasting room-created:', error);
             }
         });
 

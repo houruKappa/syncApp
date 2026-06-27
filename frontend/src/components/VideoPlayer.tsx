@@ -8,6 +8,7 @@ import './VideoPlayer.css';
 import 'videojs-youtube';
 import { RootState } from '../store';
 import { socketService } from '../services/socket';
+import { parseVideoUrl, getEmbedUrl } from '../utils/videoUtils';
 
 // Extend videojs types
 declare module 'video.js' {
@@ -27,8 +28,8 @@ const VideoPlayer: React.FC = () => {
     const [availableQualities, setAvailableQualities] = useState<string[]>([]);
     const [currentQuality, setCurrentQuality] = useState<string>('auto');
     const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-    const [qualityButtonEl, setQualityButtonEl] = useState<HTMLElement | null>(null);
-    const { currentVideoUrl, playerState, currentTime, users, videoQueue } = useSelector(
+    const [qualityButtonEl, setQualityButtonEl] = useState<HTMLElement | null>(null); const [videoPlatform, setVideoPlatform] = useState<string>('youtube');
+    const [embedUrl, setEmbedUrl] = useState<string>(''); const { currentVideoUrl, playerState, currentTime, users, videoQueue } = useSelector(
         (state: RootState) => state.room
     );
     const { user } = useSelector((state: RootState) => state.auth);
@@ -219,69 +220,73 @@ const VideoPlayer: React.FC = () => {
 
         console.log('Loading video:', currentVideoUrl);
 
-        // Determine if it's YouTube or local video
-        const isYouTube = currentVideoUrl.includes('youtube.com') || currentVideoUrl.includes('youtu.be');
+        // Parse video URL to determine platform
+        const videoInfo = parseVideoUrl(currentVideoUrl);
+
+        if (!videoInfo) {
+            console.error('Unsupported video URL:', currentVideoUrl);
+            return;
+        }
+
+        const isYouTube = videoInfo.platform === 'youtube';
         setIsYouTubeVideo(isYouTube);
+        setVideoPlatform(videoInfo.platform);
 
         try {
             if (isYouTube) {
-                // Extract video ID from various YouTube URL formats
-                let videoId = '';
-                if (currentVideoUrl.includes('youtube.com/watch?v=')) {
-                    videoId = currentVideoUrl.split('v=')[1]?.split('&')[0];
-                } else if (currentVideoUrl.includes('youtu.be/')) {
-                    videoId = currentVideoUrl.split('youtu.be/')[1]?.split('?')[0];
-                } else if (currentVideoUrl.includes('youtube.com/embed/')) {
-                    videoId = currentVideoUrl.split('embed/')[1]?.split('?')[0];
-                }
+                console.log('Loading YouTube video:', videoInfo.id);
+                setEmbedUrl('');
+                playerRef.current.src({
+                    type: 'video/youtube',
+                    src: videoInfo.url,
+                });
 
-                if (videoId) {
-                    console.log('Loading YouTube video:', videoId);
-                    playerRef.current.src({
-                        type: 'video/youtube',
-                        src: `https://www.youtube.com/watch?v=${videoId}`,
-                    });
+                // Get qualities after video loads
+                playerRef.current.one('loadedmetadata', () => {
+                    setTimeout(() => {
+                        loadYouTubeQualities();
+                    }, 2000);
+                });
+            } else if (videoInfo.platform === 'rutube' || videoInfo.platform === 'vimeo') {
+                // For Rutube and Vimeo, use iframe embed
+                console.log(`Loading ${videoInfo.platform} video:`, videoInfo.id);
 
-                    // Get qualities after video loads
-                    playerRef.current.one('loadedmetadata', () => {
-                        setTimeout(() => {
-                            loadYouTubeQualities();
-                        }, 2000);
-                    });
-                }
-            } else {
+                const embedUrl = getEmbedUrl(videoInfo);
+                setEmbedUrl(embedUrl);
+
+                // Hide video.js player for iframe platforms
+                playerRef.current.reset();
                 setAvailableQualities([]);
-
-                // For local videos
-                const fullUrl = currentVideoUrl.startsWith('http')
-                    ? currentVideoUrl
-                    : `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${currentVideoUrl}`;
-
-                console.log('Loading local video from:', fullUrl);
+            } else if (videoInfo.platform === 'direct') {
+                console.log('Loading direct video:', videoInfo.url);
+                setEmbedUrl('');
 
                 // Detect video type from extension
                 let videoType = 'video/mp4';
-                if (fullUrl.includes('.webm')) {
+                if (videoInfo.url.includes('.webm')) {
                     videoType = 'video/webm';
-                } else if (fullUrl.includes('.ogg')) {
+                } else if (videoInfo.url.includes('.ogg')) {
                     videoType = 'video/ogg';
                 }
 
                 playerRef.current.src({
                     type: videoType,
-                    src: fullUrl,
+                    src: videoInfo.url,
                 });
+                setAvailableQualities([]);
             }
 
-            playerRef.current.load();
+            if (!embedUrl) {
+                playerRef.current.load();
 
-            // Auto-play if state is playing
-            if (playerState === 'playing') {
-                setTimeout(() => {
-                    playerRef.current?.play()?.catch((err: any) => {
-                        console.error('Autoplay failed:', err);
-                    });
-                }, 500);
+                // Auto-play if state is playing
+                if (playerState === 'playing') {
+                    setTimeout(() => {
+                        playerRef.current?.play()?.catch((err: any) => {
+                            console.error('Autoplay failed:', err);
+                        });
+                    }, 500);
+                }
             }
         } catch (error) {
             console.error('Error loading video:', error);
@@ -459,12 +464,45 @@ const VideoPlayer: React.FC = () => {
                         position: 'relative',
                     }}
                 >
-                    <div data-vjs-player>
-                        <video
-                            ref={videoRef}
-                            className="video-js vjs-big-play-centered"
-                        />
-                    </div>
+                    {embedUrl ? (
+                        // Show iframe for Rutube and Vimeo
+                        <Box sx={{ position: 'relative', paddingTop: '56.25%' /* 16:9 aspect ratio */ }}>
+                            <iframe
+                                src={embedUrl}
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    border: 'none',
+                                }}
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                title="Video Player"
+                            />
+                            {!isModerator && (
+                                <Box
+                                    sx={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        pointerEvents: 'none',
+                                    }}
+                                />
+                            )}
+                        </Box>
+                    ) : (
+                        // Show video.js player for YouTube and direct videos
+                        <div data-vjs-player>
+                            <video
+                                ref={videoRef}
+                                className="video-js vjs-big-play-centered"
+                            />
+                        </div>
+                    )}
                 </Box>
             </Box>
 

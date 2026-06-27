@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { RootState } from '../store';
 import {
     Container,
     Grid,
@@ -25,6 +27,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import LockIcon from '@mui/icons-material/Lock';
 import SearchIcon from '@mui/icons-material/Search';
 import { roomService } from '../services';
+import { socketService } from '../services/socket';
 
 interface Room {
     id: string;
@@ -38,6 +41,7 @@ interface Room {
 
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
+    const { accessToken } = useSelector((state: RootState) => state.auth);
     const [rooms, setRooms] = useState<Room[]>([]);
     const [loading, setLoading] = useState(true);
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -55,6 +59,42 @@ const Dashboard: React.FC = () => {
 
     useEffect(() => {
         fetchRooms();
+
+        // Setup socket listeners for live updates
+        const socket = socketService.getSocket();
+        if (!socket && accessToken) {
+            socketService.connect(accessToken);
+        }
+
+        const setupListeners = () => {
+            const socket = socketService.getSocket();
+            if (!socket) return;
+
+            // Refresh rooms when a new room is created or deleted
+            socket.on('room-created', () => {
+                console.log('New room created, refreshing list');
+                fetchRooms();
+            });
+
+            socket.on('room-deleted', () => {
+                console.log('Room deleted, refreshing list');
+                fetchRooms();
+            });
+
+            // Refresh periodically to update user counts
+            const interval = setInterval(() => {
+                fetchRooms();
+            }, 30000); // Every 30 seconds
+
+            return () => {
+                clearInterval(interval);
+                socket.off('room-created');
+                socket.off('room-deleted');
+            };
+        };
+
+        const cleanup = setupListeners();
+        return cleanup;
     }, []);
 
     const fetchRooms = async () => {
@@ -86,6 +126,17 @@ const Dashboard: React.FC = () => {
         try {
             const response = await roomService.createRoom(formData);
             handleCloseDialog();
+
+            // Broadcast room creation to all connected clients
+            const socket = socketService.getSocket();
+            if (socket) {
+                socket.emit('room-created');
+            }
+
+            // Refresh room list
+            await fetchRooms();
+
+            // Navigate to the new room
             navigate(`/room/${response.data.room.id}`);
         } catch (error) {
             console.error('Failed to create room:', error);

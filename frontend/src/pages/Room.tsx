@@ -177,7 +177,6 @@ const Room: React.FC = () => {
 
                 socket.on('room-closed', (data) => {
                     console.log('Room closed event received:', data);
-                    setRoomClosed(true);
 
                     // Leave voice chat if active
                     if (voiceActive) {
@@ -194,19 +193,18 @@ const Room: React.FC = () => {
                     // Clear room state
                     dispatch(resetRoom());
 
-                    // Redirect to main page
-                    setTimeout(() => {
-                        socketService.disconnect();
-                        navigate('/');
-                    }, 2000);
+                    // Set room closed flag
+                    setRoomClosed(true);
+
+                    // Redirect to dashboard immediately
+                    navigate('/', { replace: true });
                 });
 
                 socket.on('kicked', (data) => {
                     console.log('Kicked from room:', data);
                     alert(data.message);
                     dispatch(resetRoom());
-                    socketService.disconnect();
-                    navigate('/');
+                    navigate('/', { replace: true });
                 });
 
                 socket.on('connect', () => {
@@ -231,6 +229,23 @@ const Room: React.FC = () => {
             if (id) {
                 socketService.leaveRoom(id);
             }
+
+            // Remove all socket listeners to prevent duplicates
+            const socket = socketService.getSocket();
+            if (socket) {
+                socket.off('user-joined');
+                socket.off('user-left');
+                socket.off('chat-message');
+                socket.off('video-added');
+                socket.off('video-removed');
+                socket.off('player-state-changed');
+                socket.off('player-time-updated');
+                socket.off('room-closed');
+                socket.off('kicked');
+                socket.off('connect');
+                socket.off('disconnect');
+            }
+
             dispatch(resetRoom());
         };
     }, [id, accessToken, dispatch, navigate]);
